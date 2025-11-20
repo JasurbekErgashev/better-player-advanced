@@ -22,6 +22,7 @@ import 'package:better_player_example/pages/notification_player_page.dart';
 import 'package:better_player_example/pages/overridden_aspect_ratio_page.dart';
 import 'package:better_player_example/pages/overriden_duration_page.dart';
 import 'package:better_player_example/pages/picture_in_picture_page.dart';
+import 'package:better_player_example/pages/hls_pip_test_page.dart';
 import 'package:better_player_example/pages/placeholder_until_play_page.dart';
 import 'package:better_player_example/pages/playlist_page.dart';
 import 'package:better_player_example/pages/resolutions_page.dart';
@@ -142,6 +143,9 @@ class _WelcomePageState extends State<WelcomePage> {
     }),
     _buildExampleElementWidget('Picture in Picture', () {
       _navigateToPage(const PictureInPicturePage());
+    }),
+    _buildExampleElementWidget('HLS PiP Test', () {
+      _navigateToPage(const HlsPipTestPage());
     }),
     _buildExampleElementWidget('Controls always visible', () {
       _navigateToPage(const ControlsAlwaysVisiblePage());
