@@ -25,6 +25,7 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     public private(set) var failedCount: Int = 0
 
     public var playerLayerRef: AVPlayerLayer?
+    private var playerView: BetterPlayerView?
     public var pictureInPicture: Bool = false
     public var observersAdded: Bool = false
     public var stalledCount: Int = 0
@@ -47,6 +48,14 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
         self.isInitialized = false
         self.isPlaying = false
         self.disposed = false
+        
+        // Configure audio session for background playback
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.playback, mode: .moviePlayback)
+        } catch {
+            print("Failed to set audio session category: \(error)")
+        }
     }
 
     public convenience init(frame: CGRect) {
@@ -54,9 +63,12 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     }
 
     public func view() -> UIView {
-        let playerView = BetterPlayerView(frame: .zero)
-        playerView.player = player
-        return playerView
+        let view = BetterPlayerView(frame: .zero)
+        view.player = player
+        self.playerView = view
+        // Store reference to the layer for PiP
+        self.playerLayerRef = view.playerLayer
+        return view
     }
 
     // MARK: - Observers
@@ -248,19 +260,19 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
 
     public override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
         if keyPath == "rate" {
+            // When PiP is active, only observe status changes but don't interfere with playback
             if #available(iOS 10.0, *), let pipController = pipController, pipController.isPictureInPictureActive {
                 if let last = lastAvPlayerTimeControlStatus, last == player.timeControlStatus {
                     return
                 }
+                // Update status but don't pause/play - let PiP handle it
+                lastAvPlayerTimeControlStatus = player.timeControlStatus
                 if player.timeControlStatus == .paused {
-                    lastAvPlayerTimeControlStatus = player.timeControlStatus
                     eventSink?(["event": "pause"])
-                    return
-                }
-                if player.timeControlStatus == .playing {
-                    lastAvPlayerTimeControlStatus = player.timeControlStatus
+                } else if player.timeControlStatus == .playing {
                     eventSink?(["event": "play"])
                 }
+                return
             }
 
             if player.rate == 0 && CMTimeCompare(player.currentItem?.currentTime() ?? .zero, .zero) == 1 && (player.currentItem?.duration ?? .zero).isValid && CMTimeCompare(player.currentItem?.currentTime() ?? .zero, player.currentItem?.duration ?? .zero) == -1 && isPlaying {
@@ -318,6 +330,22 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     public func updatePlayingState() {
         guard isInitialized, key != nil else { return }
         if !observersAdded, let current = player.currentItem { addObservers(current) }
+        
+        // Don't pause if PiP is active - let PiP handle playback
+        if #available(iOS 9.0, *), let pipController = pipController, pipController.isPictureInPictureActive {
+            // When PiP is active, only play if needed, but don't pause
+            if isPlaying {
+                if #available(iOS 10.0, *) {
+                    player.playImmediately(atRate: playerRate)
+                    player.rate = playerRate
+                } else {
+                    player.play()
+                    player.rate = playerRate
+                }
+            }
+            return
+        }
+        
         if isPlaying {
             if #available(iOS 10.0, *) {
                 player.playImmediately(atRate: 1.0)
@@ -470,7 +498,14 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
 
     private func setupPipController() {
         if #available(iOS 9.0, *) {
-            try? AVAudioSession.sharedInstance().setActive(true)
+            // Set audio session category and mode for background/PiP playback
+            let audioSession = AVAudioSession.sharedInstance()
+            do {
+                try audioSession.setCategory(.playback, mode: .moviePlayback)
+                try audioSession.setActive(true)
+            } catch {
+                print("Failed to set audio session category: \(error)")
+            }
             UIApplication.shared.beginReceivingRemoteControlEvents()
             if pipController == nil, let layer = playerLayerRef, AVPictureInPictureController.isPictureInPictureSupported() {
                 pipController = AVPictureInPictureController(playerLayer: layer)
@@ -481,50 +516,23 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
 
     public func enablePictureInPicture(_ frame: CGRect) {
         disablePictureInPicture()
-        usePlayerLayer(frame)
-    }
-
-    private func usePlayerLayer(_ frame: CGRect) {
-        let layer = AVPlayerLayer(player: player)
-        if #available(iOS 13.0, *) {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let window = windowScene.windows.first,
-               let rootVC = window.rootViewController {
-                layer.frame = frame
-                layer.needsDisplayOnBoundsChange = true
-                rootVC.view.layer.addSublayer(layer)
-                rootVC.view.layer.needsDisplayOnBoundsChange = true
-                playerLayerRef = layer
-                pipController = nil
-                setupPipController()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.setPictureInPicture(true)
-                }
-            }
-        } else {
-            if let window = UIApplication.shared.keyWindow ?? UIApplication.shared.windows.first,
-               let rootVC = window.rootViewController {
-                layer.frame = frame
-                layer.needsDisplayOnBoundsChange = true
-                rootVC.view.layer.addSublayer(layer)
-                rootVC.view.layer.needsDisplayOnBoundsChange = true
-                playerLayerRef = layer
-                pipController = nil
-                setupPipController()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.setPictureInPicture(true)
-                }
+        // Use the existing layer from BetterPlayerView instead of creating a new one
+        // The layer is already part of the Flutter widget hierarchy
+        if let existingLayer = playerLayerRef ?? playerView?.playerLayer {
+            playerLayerRef = existingLayer
+            pipController = nil
+            setupPipController()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.setPictureInPicture(true)
             }
         }
     }
 
     public func disablePictureInPicture() {
-        setPictureInPicture(true)
-        if let layer = playerLayerRef {
-            layer.removeFromSuperlayer()
-            playerLayerRef = nil
-            eventSink?(["event": "pipStop"])
-        }
+        setPictureInPicture(false)
+        // Don't remove the layer - it's part of the BetterPlayerView
+        // Just stop PiP and let the system handle cleanup
+        eventSink?(["event": "pipStop"])
     }
 
     // MARK: - AVPictureInPictureControllerDelegate
@@ -533,6 +541,15 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     }
 
     public func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        // Ensure player continues playing when PiP starts
+        if isPlaying {
+            if #available(iOS 10.0, *) {
+                player.playImmediately(atRate: playerRate)
+            } else {
+                player.play()
+            }
+            player.rate = playerRate
+        }
         eventSink?(["event": "pipStart"])
     }
 

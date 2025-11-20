@@ -955,8 +955,14 @@ class BetterPlayerController {
   ///player starts playing again. if lifecycle is in [AppLifecycleState.paused]
   ///state, then video playback will stop. If showNotification is set in data
   ///source or handleLifecycle is false then this logic will be ignored.
+  ///PiP mode is excluded from this logic to allow continuous playback.
   void setAppLifecycleState(AppLifecycleState appLifecycleState) {
     if (_isAutomaticPlayPauseHandled()) {
+      // Don't pause/resume when PiP is active - let PiP handle playback
+      if (_wasInPipMode) {
+        return;
+      }
+
       _appLifecycleState = appLifecycleState;
       if (appLifecycleState == AppLifecycleState.resumed) {
         if ((_wasPlayingBeforePause ?? false) && _isPlayerVisible) {
@@ -1007,6 +1013,7 @@ class BetterPlayerController {
       _wasControlsEnabledBeforePiP = _controlsEnabled;
       setControlsEnabled(false);
       if (Platform.isAndroid) {
+        _wasInPipMode = true; // Set PiP mode flag before enabling
         _wasInFullScreenBeforePiP = _isFullScreen;
         await videoPlayerController?.enablePictureInPicture(left: 0, top: 0, width: 0, height: 0);
         enterFullScreen();
@@ -1014,15 +1021,18 @@ class BetterPlayerController {
         return;
       }
       if (Platform.isIOS) {
+        _wasInPipMode = true; // Set PiP mode flag before enabling
         final RenderBox? renderBox = betterPlayerGlobalKey.currentContext!.findRenderObject() as RenderBox?;
         if (renderBox == null) {
           BetterPlayerUtils.log(
             "Can't show PiP. RenderBox is null. Did you provide valid global"
             ' key?',
           );
+          _wasInPipMode = false; // Reset if failed
           return;
         }
         final Offset position = renderBox.localToGlobal(Offset.zero);
+        _postEvent(BetterPlayerEvent(BetterPlayerEventType.pipStart));
         return videoPlayerController?.enablePictureInPicture(
           left: position.dx,
           top: position.dy,

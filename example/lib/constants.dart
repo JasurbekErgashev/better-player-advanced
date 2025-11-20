@@ -20,7 +20,7 @@ class Constants {
   };
   static const String phantomVideoUrl = 'http://sample.vodobox.com/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8';
   static const String elephantDreamVideoUrl =
-      'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4';
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4';
   static const String forBiggerJoyridesVideoUrl =
       'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4';
   static const String verticalVideoUrl = 'http://www.exit109.com/~dnn/clips/RW20seconds_1.mp4';
