@@ -212,8 +212,8 @@ class BetterPlayerController {
 
   ///Get BetterPlayerController from context. Used in InheritedWidget.
   static BetterPlayerController of(BuildContext context) {
-    final betterPLayerControllerProvider = context
-        .dependOnInheritedWidgetOfExactType<BetterPlayerControllerProvider>()!;
+    final betterPLayerControllerProvider =
+        context.dependOnInheritedWidgetOfExactType<BetterPlayerControllerProvider>()!;
 
     return betterPLayerControllerProvider.controller;
   }
@@ -876,6 +876,7 @@ class BetterPlayerController {
   ///will play again. If there's different handler of visibility then it will be
   ///used. If showNotification is set in data source or handleLifecycle is false
   /// then this logic will be ignored.
+  ///PiP mode is excluded from this logic to allow continuous playback.
   Future<void> onPlayerVisibilityChanged(double visibilityFraction) async {
     _isPlayerVisible = visibilityFraction > 0;
     if (_disposed) {
@@ -884,6 +885,11 @@ class BetterPlayerController {
     _postEvent(BetterPlayerEvent(BetterPlayerEventType.changedPlayerVisibility));
 
     if (_isAutomaticPlayPauseHandled()) {
+      // Don't pause/resume when PiP is active - let PiP handle playback
+      if (_wasInPipMode) {
+        return;
+      }
+
       if (betterPlayerConfiguration.playerVisibilityChangedBehavior != null) {
         betterPlayerConfiguration.playerVisibilityChangedBehavior!(visibilityFraction);
       } else {
@@ -919,8 +925,7 @@ class BetterPlayerController {
   ///called manually.
   void setupTranslations(Locale locale) {
     final String languageCode = locale.languageCode;
-    translations =
-        betterPlayerConfiguration.translations?.firstWhereOrNull(
+    translations = betterPlayerConfiguration.translations?.firstWhereOrNull(
           (translations) => translations.languageCode == languageCode,
         ) ??
         _getDefaultTranslations(locale);
