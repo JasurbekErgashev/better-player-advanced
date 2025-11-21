@@ -402,7 +402,42 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
         stalledCount = 0
         isStalledCheckStarted = false
         isPlaying = true
+        
+        // For live streams, seek to the live edge before resuming playback
+        if let currentItem = player.currentItem {
+            let isLive = CMTIME_IS_INDEFINITE(currentItem.duration)
+            if isLive {
+                seekToLiveEdge { [weak self] in
+                    guard let self = self else { return }
+                    self.updatePlayingState()
+                }
+                return
+            }
+        }
+        
         updatePlayingState()
+    }
+    
+    /// Seeks to the live edge (most recent position) for live streams
+    private func seekToLiveEdge(completion: @escaping () -> Void) {
+        guard let currentItem = player.currentItem else {
+            completion()
+            return
+        }
+        
+        // Get the seekable time ranges
+        let seekableRanges = currentItem.seekableTimeRanges
+        if let lastRange = seekableRanges.last {
+            let timeRange = lastRange.timeRangeValue
+            // Seek to the end of the latest seekable range (live edge)
+            let liveEdge = CMTimeRangeGetEnd(timeRange)
+            player.seek(to: liveEdge, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                completion()
+            }
+        } else {
+            // No seekable ranges available, just continue
+            completion()
+        }
     }
 
     public func pause() {
