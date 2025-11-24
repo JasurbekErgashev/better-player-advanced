@@ -16,18 +16,18 @@ class BetterPlayer extends StatefulWidget {
   const BetterPlayer({super.key, required this.controller});
 
   factory BetterPlayer.network(String url, {BetterPlayerConfiguration? betterPlayerConfiguration}) => BetterPlayer(
-    controller: BetterPlayerController(
-      betterPlayerConfiguration ?? const BetterPlayerConfiguration(),
-      betterPlayerDataSource: BetterPlayerDataSource(BetterPlayerDataSourceType.network, url),
-    ),
-  );
+        controller: BetterPlayerController(
+          betterPlayerConfiguration ?? const BetterPlayerConfiguration(),
+          betterPlayerDataSource: BetterPlayerDataSource(BetterPlayerDataSourceType.network, url),
+        ),
+      );
 
   factory BetterPlayer.file(String url, {BetterPlayerConfiguration? betterPlayerConfiguration}) => BetterPlayer(
-    controller: BetterPlayerController(
-      betterPlayerConfiguration ?? const BetterPlayerConfiguration(),
-      betterPlayerDataSource: BetterPlayerDataSource(BetterPlayerDataSourceType.file, url),
-    ),
-  );
+        controller: BetterPlayerController(
+          betterPlayerConfiguration ?? const BetterPlayerConfiguration(),
+          betterPlayerDataSource: BetterPlayerDataSource(BetterPlayerDataSourceType.file, url),
+        ),
+      );
 
   final BetterPlayerController controller;
 
@@ -101,7 +101,14 @@ class _BetterPlayerState extends State<BetterPlayer> with WidgetsBindingObserver
 
     WidgetsBinding.instance.removeObserver(this);
     _controllerEventSubscription?.cancel();
-    widget.controller.dispose();
+
+    // Don't dispose controller if PiP is active - PiP needs the player to continue
+    // The controller will be disposed when PiP is stopped
+    final isPipActive = widget.controller.videoPlayerController?.value.isPip ?? false;
+    if (!isPipActive) {
+      widget.controller.dispose();
+    }
+
     VisibilityDetectorController.instance.forget(Key('${widget.controller.hashCode}_key'));
     super.dispose();
   }
@@ -148,20 +155,22 @@ class _BetterPlayerState extends State<BetterPlayer> with WidgetsBindingObserver
     BuildContext context,
     Animation<double> animation,
     BetterPlayerControllerProvider controllerProvider,
-  ) => Scaffold(
-    resizeToAvoidBottomInset: false,
-    body: Container(alignment: Alignment.center, color: Colors.black, child: controllerProvider),
-  );
+  ) =>
+      Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: Container(alignment: Alignment.center, color: Colors.black, child: controllerProvider),
+      );
 
   AnimatedWidget _defaultRoutePageBuilder(
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     BetterPlayerControllerProvider controllerProvider,
-  ) => AnimatedBuilder(
-    animation: animation,
-    builder: (BuildContext context, Widget? child) => _buildFullScreenVideo(context, animation, controllerProvider),
-  );
+  ) =>
+      AnimatedBuilder(
+        animation: animation,
+        builder: (BuildContext context, Widget? child) => _buildFullScreenVideo(context, animation, controllerProvider),
+      );
 
   Widget _fullScreenRoutePageBuilder(
     BuildContext context,
@@ -223,10 +232,10 @@ class _BetterPlayerState extends State<BetterPlayer> with WidgetsBindingObserver
   }
 
   Widget _buildPlayer() => VisibilityDetector(
-    key: Key('${widget.controller.hashCode}_key'),
-    onVisibilityChanged: (VisibilityInfo info) => widget.controller.onPlayerVisibilityChanged(info.visibleFraction),
-    child: BetterPlayerWithControls(controller: widget.controller),
-  );
+        key: Key('${widget.controller.hashCode}_key'),
+        onVisibilityChanged: (VisibilityInfo info) => widget.controller.onPlayerVisibilityChanged(info.visibleFraction),
+        child: BetterPlayerWithControls(controller: widget.controller),
+      );
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -236,10 +245,9 @@ class _BetterPlayerState extends State<BetterPlayer> with WidgetsBindingObserver
 }
 
 ///Page route builder used in fullscreen mode.
-typedef BetterPlayerRoutePageBuilder =
-    Widget Function(
-      BuildContext context,
-      Animation<double> animation,
-      Animation<double> secondaryAnimation,
-      BetterPlayerControllerProvider controllerProvider,
-    );
+typedef BetterPlayerRoutePageBuilder = Widget Function(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  BetterPlayerControllerProvider controllerProvider,
+);

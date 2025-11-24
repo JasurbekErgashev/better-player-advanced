@@ -578,7 +578,9 @@ class BetterPlayerController {
       throw StateError('The data source has not been initialized');
     }
 
-    if (_appLifecycleState == AppLifecycleState.resumed) {
+    // Don't check lifecycle state if PiP is active or being enabled
+    final isPipActive = _wasInPipMode || (videoPlayerController?.value.isPip ?? false);
+    if (isPipActive || _appLifecycleState == AppLifecycleState.resumed) {
       await videoPlayerController!.play();
       _hasCurrentDataSourceStarted = true;
       _wasPlayingBeforePause = null;
@@ -600,6 +602,12 @@ class BetterPlayerController {
   Future<void> pause() async {
     if (videoPlayerController == null) {
       throw StateError('The data source has not been initialized');
+    }
+
+    // Don't pause if PiP is active or being enabled - let PiP handle playback
+    final isPipActive = _wasInPipMode || (videoPlayerController?.value.isPip ?? false);
+    if (isPipActive) {
+      return;
     }
 
     await videoPlayerController!.pause();
@@ -747,6 +755,13 @@ class BetterPlayerController {
         setControlsEnabled(true);
       }
       videoPlayerController?.refresh();
+
+      // If widget was disposed while PiP was active, dispose controller now
+      if (_disposed && videoPlayerController != null) {
+        videoPlayerController!.removeListener(_onFullScreenStateChanged);
+        videoPlayerController!.removeListener(_onVideoPlayerChanged);
+        unawaited(videoPlayerController!.dispose());
+      }
     }
 
     if (_betterPlayerSubtitlesSource?.asmsIsSegmented ?? false) {
@@ -963,8 +978,10 @@ class BetterPlayerController {
   ///PiP mode is excluded from this logic to allow continuous playback.
   void setAppLifecycleState(AppLifecycleState appLifecycleState) {
     if (_isAutomaticPlayPauseHandled()) {
-      // Don't pause/resume when PiP is active - let PiP handle playback
-      if (_wasInPipMode) {
+      // Don't pause/resume when PiP is active or being enabled - let PiP handle playback
+      // Check both the flag and the actual PiP state from video player
+      final isPipActive = _wasInPipMode || (videoPlayerController?.value.isPip ?? false);
+      if (isPipActive) {
         return;
       }
 
@@ -1225,10 +1242,17 @@ class BetterPlayerController {
     }
     if (!_disposed) {
       if (videoPlayerController != null) {
-        pause();
+        // Don't pause if PiP is active - PiP needs the player to continue
+        final isPipActive = _wasInPipMode || (videoPlayerController?.value.isPip ?? false);
+        if (!isPipActive) {
+          pause();
+        }
         videoPlayerController!.removeListener(_onFullScreenStateChanged);
         videoPlayerController!.removeListener(_onVideoPlayerChanged);
-        videoPlayerController!.dispose();
+        // Don't dispose video player controller if PiP is active
+        if (!isPipActive) {
+          videoPlayerController!.dispose();
+        }
       }
       _eventListeners.clear();
       _nextVideoTimer?.cancel();
