@@ -33,6 +33,8 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     public var playerRate: Float = 1.0
     public var overriddenDuration: Int = 0
     public var lastAvPlayerTimeControlStatus: AVPlayer.TimeControlStatus? = nil
+    private var isLiveStream: Bool = false
+    private var wasPausedBeforeResume: Bool = false
 
     private var pipController: AVPictureInPictureController?
     private var restoreUIOnPipStop: ((Bool) -> Void)?
@@ -204,6 +206,8 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
         self.stalledCount = 0
         self.isStalledCheckStarted = false
         self.playerRate = 1
+        self.wasPausedBeforeResume = false
+        self.isLiveStream = false
         player.replaceCurrentItem(with: item)
 
         let asset = item.asset
@@ -374,6 +378,7 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
             return
         }
         let isLive = CMTIME_IS_INDEFINITE(player.currentItem!.duration)
+        self.isLiveStream = isLive
         if !isLive && duration() == 0 { return }
 
         if let track = player.currentItem?.tracks.first?.assetTrack {
@@ -401,12 +406,34 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
     public func play() {
         stalledCount = 0
         isStalledCheckStarted = false
+        
+        // For live streams, seek to the live edge before resuming playback after a pause
+        if isLiveStream && wasPausedBeforeResume, let currentItem = player.currentItem {
+            // Get the seekable time range - for live streams, this represents the available window
+            let seekableTimeRanges = currentItem.seekableTimeRanges
+            if !seekableTimeRanges.isEmpty, let seekableRange = seekableTimeRanges.last?.timeRangeValue {
+                // Seek to the end of the seekable time range (live edge)
+                // Use a small tolerance to allow AVPlayer to find the best keyframe
+                let liveEdge = CMTimeAdd(seekableRange.start, seekableRange.duration)
+                let tolerance = CMTimeMake(value: 1, timescale: 1) // 1 second tolerance
+                player.seek(to: liveEdge, toleranceBefore: tolerance, toleranceAfter: .zero) { [weak self] finished in
+                    guard let self = self, finished else { return }
+                    self.isPlaying = true
+                    self.wasPausedBeforeResume = false
+                    self.updatePlayingState()
+                }
+                return
+            }
+        }
+        
+        wasPausedBeforeResume = false
         isPlaying = true
         updatePlayingState()
     }
 
     public func pause() {
         isPlaying = false
+        wasPausedBeforeResume = true
         updatePlayingState()
     }
 
@@ -597,6 +624,8 @@ public class BetterPlayer: NSObject, FlutterPlatformView, FlutterStreamHandler, 
         disposed = false
         failedCount = 0
         key = nil
+        isLiveStream = false
+        wasPausedBeforeResume = false
         guard player.currentItem != nil else { return }
         removeObservers()
         player.currentItem?.asset.cancelLoading()
